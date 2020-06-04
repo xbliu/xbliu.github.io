@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"yoursite.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="一、前言&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;应用程序开发过程中,想要操作文件,总避免不了使用open系统调用,当调用open函数时会返回一个文件句柄(fd),每次open成功都会返回不同的fd.那么内核空间如何管理它们呢? 二、fd 概念&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;fd全称file descriptor,常言道linux下一切皆文件.也就是说所有都可以通过文件操作来">
+<meta property="og:type" content="article">
+<meta property="og:title" content="fs-filetable">
+<meta property="og:url" content="http://yoursite.com/2020/06/04/fs-filetable/index.html">
+<meta property="og:site_name" content="个人博客 xbliu">
+<meta property="og:description" content="一、前言&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;应用程序开发过程中,想要操作文件,总避免不了使用open系统调用,当调用open函数时会返回一个文件句柄(fd),每次open成功都会返回不同的fd.那么内核空间如何管理它们呢? 二、fd 概念&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;fd全称file descriptor,常言道linux下一切皆文件.也就是说所有都可以通过文件操作来">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://yoursite.com/2020/06/04/fs-filetable/fs_fdtab.png">
+<meta property="article:published_time" content="2020-06-04T14:36:22.000Z">
+<meta property="article:modified_time" content="2020-06-04T15:40:34.008Z">
+<meta property="article:author" content="xbliu">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://yoursite.com/2020/06/04/fs-filetable/fs_fdtab.png">
+
+<link rel="canonical" href="http://yoursite.com/2020/06/04/fs-filetable/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>fs-filetable | 个人博客 xbliu</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">个人博客 xbliu</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/06/04/fs-filetable/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="xbliu">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="个人博客 xbliu">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          fs-filetable
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2020-06-04 22:36:22 / 修改时间：23:40:34" itemprop="dateCreated datePublished" datetime="2020-06-04T22:36:22+08:00">2020-06-04</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;应用程序开发过程中,想要操作文件,总避免不了使用open系统调用,当调用open函数时会返回一个文件句柄(fd),每次open成功都会返回不同的fd.那么内核空间如何管理它们呢?</p>
+<h1 id="二、fd-概念"><a href="#二、fd-概念" class="headerlink" title="二、fd 概念"></a>二、fd 概念</h1><p>&ensp;&ensp;&ensp;&ensp;fd全称file descriptor,常言道linux下一切皆文件.也就是说所有都可以通过文件操作来完成.文件操作四大核心操作api:open,read,write,close.其中open是其它操作的基础,因为fd是open返回给用户空间,是识别此已打开文件的唯一依据,后续操作都依赖它.跟踪open系统调用流程可以发现,实际上用户空间的fd就是以下结构中fd数组的索引:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">task_struct</span>//进程</span></span><br><span class="line"><span class="class">---&gt;</span></span><br><span class="line"><span class="class">	<span class="title">struct</span> <span class="title">files_struct</span> *<span class="title">files</span>//打开文件信息</span></span><br><span class="line"><span class="class">	---&gt;</span></span><br><span class="line"><span class="class">		<span class="title">struct</span> <span class="title">fdtable</span> <span class="title">rcu</span> *<span class="title">fdt</span>//文件描述符表</span></span><br><span class="line"><span class="class">		---&gt;</span></span><br><span class="line"><span class="class">			<span class="title">struct</span> <span class="title">file</span> <span class="title">rcu</span> **<span class="title">fd</span>//文件</span></span><br></pre></td></tr></table></figure>
+
+<h1 id="三、关键数据结构"><a href="#三、关键数据结构" class="headerlink" title="三、关键数据结构"></a>三、关键数据结构</h1><p>&ensp;&ensp;&ensp;&ensp;内核用fdtable结构来管理fd,具体如下:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">fdtable</span> &#123;</span></span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">int</span> max_fds;</span><br><span class="line">	<span class="class"><span class="keyword">struct</span> <span class="title">file</span> __<span class="title">rcu</span> **<span class="title">fd</span>;</span></span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *close_on_exec;</span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *open_fds;</span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *full_fds_bits;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">1)max_fds:</span><br><span class="line">	当前允许分配fd的最大值</span><br><span class="line">2)fd:</span><br><span class="line">	内核空间用struct file来描述一个文件对象,用户空间用fd(file descriptor)表示一个文件对象.</span><br><span class="line">fd实际上是一个数组,它维护着所有打开的文件信息,其数组成员(struct file)用于内核空间操作文件,对应的数组下标用于用户空间操作文件,可避免数据直接暴露给用户空间.</span><br><span class="line">3)close_on_exec:</span><br><span class="line">	记录每个已打开文件close_on_exec的情况,一位表示一个已打开文件的close_on_exec信息.</span><br><span class="line">close_on_exec表示在调用系统调用execve()时需要关闭此文件.</span><br><span class="line">4)open_fds:</span><br><span class="line">	记录已打开(已使用)的fd情况,每一位表示一个fd的使用情况,1:表示已使用 0:表示未使用.</span><br><span class="line">5)full_fds_bits:</span><br><span class="line">	每一位表示连续BITS_PER_BYTE个fd的使用情况,1:表示全使用 0:表示未全使用.</span><br></pre></td></tr></table></figure>
+
+<h1 id="四、文件描述符表分配策略"><a href="#四、文件描述符表分配策略" class="headerlink" title="四、文件描述符表分配策略"></a>四、文件描述符表分配策略</h1><p>&ensp;&ensp;&ensp;&ensp;在系统中资源是有限的,所以一个进程中可打开的文件数量是有限制的,可以通过/proc/$pid/limits查看Max open files限制.虽然规定了进程可打开文件数量的上限,但这并不意味着进程会用完所有的文件描述,若一开始时就分配所有的资源,这无疑是一种浪费.<br>因此内核空间对于fdtable的分配采取默认与动态分配两种策略:<br>&ensp;&ensp;默认策略就是当进程开始创建时,分配一个固定数量的文件描述所需的资源,此数量为BITS_PER_LONG.<br>&ensp;&ensp;动态分配就是当已打开的文件描述数量超出现有可分配最大数量时重新分配所需资源.每次以2的n次方的1024B/sizeof(struct file *)来递增扩充fd的容量,完成旧数据迁移后释放掉旧数据占用的内存(默认的fdtable除外).</p>
+<h1 id="五、文件描述符分配管理"><a href="#五、文件描述符分配管理" class="headerlink" title="五、文件描述符分配管理"></a>五、文件描述符分配管理</h1><p>&ensp;&ensp;&ensp;&ensp;fdtable使用fd数组记录分配的文件对象,用open_fds数组成员的每一bit表示相应下标fd数组成员的分配状况.如数组成员open_fds[i],其类型为unsigned long.那么open_fds[i]的第j位表示fd数组成员fd[i*BITS_PER_LONG+j]分配状况,bit 0表示未分配,1表示已分配.<br>&ensp;&ensp;用full_fds_bits数组成员的每1 bit表示相应下标open_fds数组成员的分配状况.如数组成员full_fds_bits[i],其类型为unsigned long,那么full_fds_bits[i]的第j位表示open_fds[i*BITS_PER_LONG+j]的分配状况.1表示其全部分配完,即open_fds[i*BITS_PER_LONG+j]的每1bit都为1,bit 0表示未全使用,即不全为1的情况.<br>之所示这样分级设计是为了加速查找速度.就如我们在中国地图上查找某一个县,我们先是确定省份,再确定市最后确定县一样.通过逐步的缩小查找范围,最后找到符合要求的.<br>所以查找未使用的fd的步骤如下:<br>&ensp;&ensp;1)在给定范围内[start,max]查找full_fds_bits数组[start/BITS_PER_LONG,max/BITS_PER_LONG]范围内中第一个为0的bit.<br>&ensp;&ensp;2)查找对应的open_fds数组成员中第一个为0的bit.<br>内核中查找未使用的bit的函数为find_next_zero_bit.若start=0的话,那么按照以上的查找步骤即使有相应的bit被置1,也还是要比较一次,这样的比较是没有必要的.因此内核在struct files_struct增加了next_fd成员,记录下一次开始查找的位置.<br>next_fd值更改有以下两种情况:<br>1)每次成功找到一个可用fd,next_fd等于此可用fd+1(next_fd=fd+1).<br>2)每次关闭一个文件,若此closed fd小于next_fd,next_fd等于closed fd(next_fd=fd).这样可以很快的复用关闭的fd.整个文件描述符相关的结构如下图:<br>                                                            <img src="/2020/06/04/fs-filetable/fs_fdtab.png" class></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/05/08/v4l2-media/" rel="prev" title="v4l2_media(v1.0)">
+      <i class="fa fa-chevron-left"></i> v4l2_media(v1.0)
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#一、前言"><span class="nav-number">1.</span> <span class="nav-text">一、前言</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#二、fd-概念"><span class="nav-number">2.</span> <span class="nav-text">二、fd 概念</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#三、关键数据结构"><span class="nav-number">3.</span> <span class="nav-text">三、关键数据结构</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#四、文件描述符表分配策略"><span class="nav-number">4.</span> <span class="nav-text">四、文件描述符表分配策略</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#五、文件描述符分配管理"><span class="nav-number">5.</span> <span class="nav-text">五、文件描述符分配管理</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">xbliu</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">xbliu</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

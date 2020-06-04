@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"yoursite.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="一、前言&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;媒体设备越来越多的处理多种相关功能,如:1)许多USB摄像头包括麦克风2)视频采集硬件也可以输出视频3)SoC摄像头接口也可以执行类似于视频编解码器的内存到内存的操作.独立的功能即可在同一硬件中实现,也可以被建模为独立的设备.这些设备的关系随着越来越多先进的SoC设备的推出,拓扑结构变得越来越复杂.&amp;ensp;尽管v4l2对设备各组件抽象出了">
+<meta property="og:type" content="article">
+<meta property="og:title" content="v4l2_media(v1.0)">
+<meta property="og:url" content="http://yoursite.com/2020/05/08/v4l2-media/index.html">
+<meta property="og:site_name" content="个人博客 xbliu">
+<meta property="og:description" content="一、前言&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;媒体设备越来越多的处理多种相关功能,如:1)许多USB摄像头包括麦克风2)视频采集硬件也可以输出视频3)SoC摄像头接口也可以执行类似于视频编解码器的内存到内存的操作.独立的功能即可在同一硬件中实现,也可以被建模为独立的设备.这些设备的关系随着越来越多先进的SoC设备的推出,拓扑结构变得越来越复杂.&amp;ensp;尽管v4l2对设备各组件抽象出了">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://yoursite.com/2020/05/08/v4l2-media/media_obj.png">
+<meta property="og:image" content="http://yoursite.com/2020/05/08/v4l2-media/meida_framework.png">
+<meta property="article:published_time" content="2020-05-08T13:52:17.000Z">
+<meta property="article:modified_time" content="2020-05-16T15:19:02.339Z">
+<meta property="article:author" content="xbliu">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://yoursite.com/2020/05/08/v4l2-media/media_obj.png">
+
+<link rel="canonical" href="http://yoursite.com/2020/05/08/v4l2-media/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>v4l2_media(v1.0) | 个人博客 xbliu</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">个人博客 xbliu</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/05/08/v4l2-media/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="xbliu">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="个人博客 xbliu">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          v4l2_media(v1.0)
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2020-05-08 21:52:17" itemprop="dateCreated datePublished" datetime="2020-05-08T21:52:17+08:00">2020-05-08</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-05-16 23:19:02" itemprop="dateModified" datetime="2020-05-16T23:19:02+08:00">2020-05-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;媒体设备越来越多的处理多种相关功能,如:<br>1)许多USB摄像头包括麦克风<br>2)视频采集硬件也可以输出视频<br>3)SoC摄像头接口也可以执行类似于视频编解码器的内存到内存的操作.<br>独立的功能即可在同一硬件中实现,也可以被建模为独立的设备.这些设备的关系随着越来越多先进的SoC设备的推出,拓扑结构变得越来越复杂.<br>&ensp;尽管v4l2对设备各组件抽象出了v4l2 device与v4l2 subdevs,但是v4l2 device与v4l2 subdev以及v4l2 subdev之间数据流向并未建立,即它们之间数据流向关系需要自已建立.故需要一套框架来发现设备内部各组件数据流向的拓朴关系,运行时配置,减少驱动开发的难度.</p>
+<h1 id="二、gstreamer多媒体概念"><a href="#二、gstreamer多媒体概念" class="headerlink" title="二、gstreamer多媒体概念"></a>二、gstreamer多媒体概念</h1><p>&ensp;&ensp;&ensp;&ensp;多媒体开源播放器众所周知的有gstreamer,VLC,ffmpeg等,其中gstreamer是为了解决linux平台下多媒体的应用开发问题而设计的.gstreamer 框架有以下两个优点:<br>1)插件组件机制:能够复用其它的多媒体框架.<br>2)视频管道(pipeline)的创意.<br>&ensp;&ensp;&ensp;&ensp;多媒体有如下典型行为：<br>1)读取文件<br>2)不同格式的编解码<br>3)从硬件采集设备上采集数据<br>4)在硬件设备上播放多媒体<br>5)多个流的复用<br>&ensp;&ensp;gstreamer根椐以上行为抽象出以下对象:<br>元件(element)对象:参与数据处理的各个功能模块(多媒体行为).<br>管道(pipe):由数据流经过的所有元件组成.即元件是管道最小的构建单元.<br>衬垫(pad):元件(element)与外界的连接通道,对于某个特定元件来说,其能够处理的媒体类型正是通过衬垫暴露给其它元件的.元件具有大量的pads,它们是source或者sink pads.source pads提供数据,sink pads消耗数据.<br>链接(link):建立src pad与sink pad的定向连接<br>&ensp;&ensp;gstreamer还有Bin的概念但这不是我们讨论的主题.那么多媒体框架跟它又有什么关系呢?</p>
+<h1 id="三、media框架"><a href="#三、media框架" class="headerlink" title="三、media框架"></a>三、media框架</h1><h2 id="1-多媒体设备模型"><a href="#1-多媒体设备模型" class="headerlink" title="1.多媒体设备模型"></a>1.多媒体设备模型</h2><p>&ensp;&ensp;&ensp;&ensp;为了建立拓朴关系,多媒体抽象出以下对象:<br>实体(entity):一个基本的媒体硬件或软件构件.它可以对应大量的逻辑块,如物理硬件设备(例如CMOS传感器)、逻辑硬件设备(片上系统图像处理流水线中的构建块)、DMA通道或物理连接器等.<br>接口(interface):Linux内核用户空间API接口的图形表示,如设备节点或sysfs文件,控制图形中的一个或多个实体,代表多媒体设备节点.<br>衬垫(pad):一个数据连接端点,通过它,一个实体可以与其他实体进行交互.由实体产生的数据(不限于视频)从实体的输出流向一个或多个实体的输入<br>数据链路:两个pad之间的点对点定向连接,可以是同一实体上的,也可以是不同实体上的.数据从一个源pad流向一个终端pad<br>接口链路:Linux内核接口和实体之间的点对点双向控制连接.<br>&ensp;&ensp;对比media 与gstreamer概念,不难发现:<br>1)entity相当于element,代表v4l2_subdev或v4l2_dev.<br>2)pipe、pad一样,link几乎一样.<br>两者几乎相同,但有以下区别:<br>1)侧重点不一样:<br>&ensp;&ensp;gstreamer侧重的是各组件功能实现,pipe建立是为了更好服务功能,且运行时只有一条管道.<br>media侧重的是各组件之间的关系,即哪些组件可组成一条pipe,运行时多个pipe可同时存在.<br>2)link的目的不一样<br>&ensp;&ensp;gstreamer link不仅建立pad的关系(peer)且具有传递数据流的功能.<br>media link不仅可建立两个pad的关系,还可建立entity可与interface的关系,<br>但不具备传递数据功能,因为数据流走的硬件通道.<br>多媒体对象关系如下图:<br>                                                <img src="/2020/05/08/v4l2-media/media_obj.png" class></p>
+<h2 id="2-多媒体元素之间的关联"><a href="#2-多媒体元素之间的关联" class="headerlink" title="2.多媒体元素之间的关联"></a>2.多媒体元素之间的关联</h2><p>&ensp;&ensp;&ensp;&ensp;media entity关联方式分为两种:<br>1)media pad关联<br>&ensp;&ensp;media_entity至少包含一个pad,pad分为source pad与sink pad,source pad表示流的输出端点,sink pad表示流的输入端点.两个media entity可通过media link将一端的source pad与另一端的sink pad关联起来.实际上media link含有source pad与sink pad的指针,所谓的建立连接实际上是media link的pad的指针指向各自的pad,然后media link加入到media entity的link列表中(两端的entity各自创建link加入到各自的link列表).<br>2)media_entity与media_interface关联<br>&ensp;&ensp;video_device 设备节点是用户空间访问的切入点,作为流的终点或者发源地,video_device是内核空间 v4l2的切入点,也被看作一个media entity.设备节点与video device entity之间有数据流动.故media_intf_devnode可关联上video_device entity,若video device对应的是v4l2子设备,它也将关联上vl42-sub entity.</p>
+<h2 id="3-多媒体pipe管理"><a href="#3-多媒体pipe管理" class="headerlink" title="3.多媒体pipe管理"></a>3.多媒体pipe管理</h2><p>1)流媒体启动/停止<br>&ensp;&ensp;当流媒体启动后,链接状态不应该被修改, 故开启时驱动程序必须通知管道中所有实体此事件.media_pipeline_start正是因此而设计,它做了以下几件事:<br>a)对所有使能的实体进行图深度遍历(pipe用bitmap记录所有访问过的entity)<br>b)对entity的stream_count自增(防止开启过程中entity对link进行属性更改),记录pipe<br>c)对所有的终端实体的source pad与sink pad进行属性验证(一个enity即可以是源实体也可以是终端实体)<br>d)检查实体是否存在必须建立的link<br>&ensp;&ensp;流媒体停止实现就比较简单了,图深度遍历所有使能的实体,对它的stream_count自减,当stream_count为0时,从pipe中清除<br>2)单个pipe的开启<br>&ensp;&ensp;大都时候流媒体开启时并不希望无关的entity的流功能开启,而media_pipeline_start进行的是深度遍历,即此pipe记录了所有使能的entity.这跟期望的pipe开启是有差距的,所以v4l2提供了两个media_graph_walk_start与media_graph_walk_next两个基础接口供驱动开发者自已实现期望的pipe.<br>&ensp;&ensp;media_pipeline_start也是调用上两个基础接口实现,为什不一步到位呢?因为硬件拓朴关系太复杂了,可能存在多个pipe,没有办法知道哪个pipe是期望开启的,只有驱动开发者自已知道.试想一下,从entity A的sourc pad到sink pad entity B,而这此时entity B的source pad 有多个?即有分叉,算法如何判断哪一个是有效的呢?<br>3)v4l2 流功能开启<br>&ensp;&ensp;pipe记录相关的entity,由于v4l2_subdev也是entity,所以可根椐entity得到相应的v4l2_subdev,再对它进行流操作(ops-&gt;video-&gt;s_stream).</p>
+<h2 id="4-多媒体对象管理"><a href="#4-多媒体对象管理" class="headerlink" title="4.多媒体对象管理"></a>4.多媒体对象管理</h2><p>&ensp;&ensp;&ensp;&ensp;多媒体设备框架虽然是为了驱动开发方便建立设备拓朴关系,但也同时通过字符设备允许用户空间操作entity.字符驱动抽象出meida_device代表多媒体设备,管理entity的id分配(entity具有唯一性,通过id区分),并且管理所有entity、interface、pad、link.meida_device与v4l2_device一一对应.</p>
+<p>gobj是entity,link,pad,interface的基类,整个关系图如下:<br>                                                <img src="/2020/05/08/v4l2-media/meida_framework.png" class></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/04/27/v4l2-event/" rel="prev" title="v4l2-event(v1.0)">
+      <i class="fa fa-chevron-left"></i> v4l2-event(v1.0)
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/06/04/fs-filetable/" rel="next" title="fs-filetable">
+      fs-filetable <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#一、前言"><span class="nav-number">1.</span> <span class="nav-text">一、前言</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#二、gstreamer多媒体概念"><span class="nav-number">2.</span> <span class="nav-text">二、gstreamer多媒体概念</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#三、media框架"><span class="nav-number">3.</span> <span class="nav-text">三、media框架</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-多媒体设备模型"><span class="nav-number">3.1.</span> <span class="nav-text">1.多媒体设备模型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-多媒体元素之间的关联"><span class="nav-number">3.2.</span> <span class="nav-text">2.多媒体元素之间的关联</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-多媒体pipe管理"><span class="nav-number">3.3.</span> <span class="nav-text">3.多媒体pipe管理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-多媒体对象管理"><span class="nav-number">3.4.</span> <span class="nav-text">4.多媒体对象管理</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">xbliu</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">xbliu</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

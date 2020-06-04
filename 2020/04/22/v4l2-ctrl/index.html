@@ -20,16 +20,16 @@
     var CONFIG = {"hostname":"yoursite.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
   </script>
 
-  <meta name="description" content="一、前言​        V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已处理,而且处理控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加&#x2F;设置控件、获取&#x2F;验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地使驱动开发变得更简单. 二、v">
+  <meta name="description" content="一、前言&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已实现,但是实现控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加&#x2F;设置控件、获取&#x2F;验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地">
 <meta property="og:type" content="article">
-<meta property="og:title" content="v4l2_ctrl(草稿)">
+<meta property="og:title" content="v4l2_ctrl(v1.0)">
 <meta property="og:url" content="http://yoursite.com/2020/04/22/v4l2-ctrl/index.html">
 <meta property="og:site_name" content="个人博客 xbliu">
-<meta property="og:description" content="一、前言​        V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已处理,而且处理控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加&#x2F;设置控件、获取&#x2F;验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地使驱动开发变得更简单. 二、v">
+<meta property="og:description" content="一、前言&amp;ensp;&amp;ensp;&amp;ensp;&amp;ensp;V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已实现,但是实现控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加&#x2F;设置控件、获取&#x2F;验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="http://yoursite.com/2020/04/22/v4l2-ctrl/v4l2_ctrl.png">
 <meta property="article:published_time" content="2020-04-21T16:20:08.000Z">
-<meta property="article:modified_time" content="2020-04-21T16:48:41.467Z">
+<meta property="article:modified_time" content="2020-05-16T15:18:08.949Z">
 <meta property="article:author" content="xbliu">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="http://yoursite.com/2020/04/22/v4l2-ctrl/v4l2_ctrl.png">
@@ -47,7 +47,7 @@
   };
 </script>
 
-  <title>v4l2_ctrl(草稿) | 个人博客 xbliu</title>
+  <title>v4l2_ctrl(v1.0) | 个人博客 xbliu</title>
   
 
 
@@ -165,7 +165,7 @@
     </span>
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          v4l2_ctrl(草稿)
+          v4l2_ctrl(v1.0)
         </h1>
 
         <div class="post-meta">
@@ -174,9 +174,24 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">发表于</span>
-              
 
-              <time title="创建时间：2020-04-22 00:20:08 / 修改时间：00:48:41" itemprop="dateCreated datePublished" datetime="2020-04-22T00:20:08+08:00">2020-04-22</time>
+              <time title="创建时间：2020-04-22 00:20:08" itemprop="dateCreated datePublished" datetime="2020-04-22T00:20:08+08:00">2020-04-22</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-05-16 23:18:08" itemprop="dateModified" datetime="2020-05-16T23:18:08+08:00">2020-05-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
             </span>
 
           
@@ -190,29 +205,14 @@
     <div class="post-body" itemprop="articleBody">
 
       
-        <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>​        V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已处理,而且处理控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加/设置控件、获取/验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地使驱动开发变得更简单.</p>
-<h1 id="二、v4l2-ctrl基本元素"><a href="#二、v4l2-ctrl基本元素" class="headerlink" title="二、v4l2_ctrl基本元素"></a>二、v4l2_ctrl基本元素</h1><p>​        视频设备各种各样,属性也不一.但是从开发语言角度来看,都可以用数据类型表示.</p>
-<h2 id="1-单项类型v4l2-ctrl"><a href="#1-单项类型v4l2-ctrl" class="headerlink" title="1.单项类型v4l2_ctrl"></a>1.单项类型v4l2_ctrl</h2><p>​        由一个基本类型或自定义类型组成的v4l2_ctrl,其中自定义类型可看成一整体项.</p>
-<p>​    这些与开发语言基本类型(整型、字符)与struct一一对应.属性一般由区间值组成,故有<strong>minimum, maximum, default_value</strong>三个基本元素.从minimum增长到maximum,并非一步步的增长,故有<strong>step</strong>表示一次增长值.</p>
-<h2 id="2-多项类型v4l2-ctrl"><a href="#2-多项类型v4l2-ctrl" class="headerlink" title="2.多项类型v4l2_ctrl"></a>2.多项类型v4l2_ctrl</h2><p>​        由多个同一类型组成的v4l2_ctrl,与数组对应.数组分为一维数组与多维数组.</p>
-<p>​    一维数组中对应的功能选择项ctrl叫做memu.并非同类设备都支持这些选项,很有可能是其中一个子集，故用<strong>menu_skip_mask</strong>元素表示支持哪些子选项,最大可支持64个子选项,常见的menu是整型与字符型的,用<strong>qmenu_int</strong>与<strong>qmenu</strong>联合体表示.</p>
-<p>​    多维数组表示那些非功能性选择项的同类型,数目常大于1,由<strong>elems,elem_size,dims,nr_of_dims</strong>四项表示.dims存放每个维度元素个数，最多可支持四维数组.</p>
-<h2 id="3-关联性v4l2-ctrl"><a href="#3-关联性v4l2-ctrl" class="headerlink" title="3.关联性v4l2_ctrl"></a>3.关联性v4l2_ctrl</h2><p>​        v4l2_ctrl之间可能是相互独立的,也有可能存在依赖关系,如音量大小是否有效取决于是否静音,此时一个v4l2_ctrl的设置影响其它v4l2_ctrl的设置.面对这种复杂的场景,设置时需要知道两者的依赖关系,v4l2_ctrl中用<strong>cluster</strong>建立这种依赖关系.</p>
-<h1 id="三、v4l2-ctrl管理"><a href="#三、v4l2-ctrl管理" class="headerlink" title="三、v4l2_ctrl管理"></a>三、v4l2_ctrl管理</h1><pre><code>一个视频节点有多个v4l2_ctrl,v4l2_ctrl的目的是让用户可以设置设备的属性,但在设置之前需要得到相应的v4l2_ctrl.</code></pre><h2 id="1-v4l2-ctrl唯一标识"><a href="#1-v4l2-ctrl唯一标识" class="headerlink" title="1.v4l2_ctrl唯一标识"></a>1.v4l2_ctrl唯一标识</h2><p>​        采用id作为唯一标识,name作为辅助.</p>
-<h2 id="2-v4l2-ctrl-handler"><a href="#2-v4l2-ctrl-handler" class="headerlink" title="2.v4l2_ctrl_handler"></a>2.v4l2_ctrl_handler</h2><p>​        跟踪视频节点下所有控件对象.它维护着一个所拥有的v4l2_ctrl对象列表以及另一个指向控件的引用(v4l2_ctrl_ref)列表(可能是指向其它处理程序所拥有的控件???).提供了三种以下查找策略:</p>
-<p>1)最近查找</p>
-<p>​    v4l2_ctrl_handler缓存上一次查找的v4l2_ctrl对象,以加快每次查找速度.</p>
-<p>2)根椐id查找相应v4l2_ctrl对象   </p>
-<p>​    v4l2_ctrl_handler采用hash单向列表的方式管理所有的控件引用.</p>
-<p>查找指定id的v4l2_ctrl:   </p>
-<p>​    a.根椐id得到相应的buckets的v4l2_ctrl_ref单向列表   </p>
-<p>​    b.轮循v4l2_ctrl_ref单向列表得到相应的v4l2_ctrl_ref,再由v4l2_ctrl_ref得到对应的v4l2_ctrl.</p>
-<p>3)根椐id查找下一个v4l2_ctrl对象   </p>
-<p>​    v4l2_ctrl_handler 采用排序列表方式管理所有的v4l2_ctrl_ref,按照v4l2_ctrl的id大小以升序方式排序.</p>
-<p>查找指定id的下一个v4l2_ctrl:   </p>
-<p>​    a.根据2)方式查找v4l2_ctrl,取此v4l2_ctrl的下一个v4l2_ctrl.如应用不知设备支持哪些v4l2_ctrl,故需枚举所有支持的v4l2_ctrl.   </p>
-<p>​    b.轮循此排序列表.</p>
-<p>​                                                                        <img src="/2020/04/22/v4l2-ctrl/v4l2_ctrl.png" class></p>
+        <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已实现,但是实现控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加/设置控件、获取/验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地使驱动开发变得更简单.</p>
+<h1 id="二、v4l2-ctrl基本元素"><a href="#二、v4l2-ctrl基本元素" class="headerlink" title="二、v4l2_ctrl基本元素"></a>二、v4l2_ctrl基本元素</h1><p>&ensp;&ensp;&ensp;&ensp;视频设备各种各样,属性也不一.但是从开发语言角度来看,都可以用数据类型表示.</p>
+<h2 id="1-单项类型v4l2-ctrl"><a href="#1-单项类型v4l2-ctrl" class="headerlink" title="1.单项类型v4l2_ctrl"></a>1.单项类型v4l2_ctrl</h2><p>&ensp;&ensp;&ensp;&ensp;由一个基本类型或自定义类型组成的v4l2_ctrl,其中自定义类型可看成一整体项.<br>&ensp;&ensp;这些与开发语言基本类型(整型、字符)与struct一一对应.属性一般由区间值组成,故有<strong>minimum, maximum, default_value</strong>三个基本元素.从minimum增长到maximum,并非一步步的增长,故有<strong>step</strong>表示一次增长值.</p>
+<h2 id="2-多项类型v4l2-ctrl"><a href="#2-多项类型v4l2-ctrl" class="headerlink" title="2.多项类型v4l2_ctrl"></a>2.多项类型v4l2_ctrl</h2><p>&ensp;&ensp;&ensp;&ensp;由多个同一类型组成的v4l2_ctrl,与数组对应.数组分为一维数组与多维数组.<br>&ensp;&ensp;一维数组中对应的功能选择项ctrl叫做memu.并非同类设备都支持这些选项,很有可能是其中一个子集，故用<strong>menu_skip_mask</strong>元素表示支持哪些子选项,最大可支持64个子选项,常见的menu是整型与字符型的,用<strong>qmenu_int</strong>与<strong>qmenu</strong>联合体表示.<br>&ensp;&ensp;多维数组表示那些非功能性选择项的同类型,数目常大于1,由<strong>elems,elem_size,dims,nr_of_dims</strong>四项表示.dims存放每个维度元素个数，最多可支持四维数组.</p>
+<h2 id="3-关联性v4l2-ctrl"><a href="#3-关联性v4l2-ctrl" class="headerlink" title="3.关联性v4l2_ctrl"></a>3.关联性v4l2_ctrl</h2><p>&ensp;&ensp;&ensp;&ensp;v4l2_ctrl之间可能是相互独立的,也有可能存在依赖关系,如音量大小是否有效取决于是否静音,此时一个v4l2_ctrl的设置影响其它v4l2_ctrl的设置.面对这种复杂的场景,设置时需要知道两者的依赖关系,v4l2_ctrl中用<strong>cluster</strong>建立这种依赖关系.</p>
+<h1 id="三、v4l2-ctrl管理"><a href="#三、v4l2-ctrl管理" class="headerlink" title="三、v4l2_ctrl管理"></a>三、v4l2_ctrl管理</h1><p>&ensp;&ensp;&ensp;&ensp;一个视频节点有多个v4l2_ctrl,v4l2_ctrl的目的是让用户可以设置设备的属性,但在设置之前需要得到相应的v4l2_ctrl.</p>
+<h2 id="1-v4l2-ctrl唯一标识"><a href="#1-v4l2-ctrl唯一标识" class="headerlink" title="1.v4l2_ctrl唯一标识"></a>1.v4l2_ctrl唯一标识</h2><p>&ensp;&ensp;&ensp;&ensp;采用id作为唯一标识,name作为辅助.</p>
+<h2 id="2-v4l2-ctrl-handler"><a href="#2-v4l2-ctrl-handler" class="headerlink" title="2.v4l2_ctrl_handler"></a>2.v4l2_ctrl_handler</h2><p>&ensp;&ensp;&ensp;&ensp;跟踪视频节点下所有控件对象.它维护着一个所拥有的v4l2_ctrl对象列表以及另一个指向控件的引用(v4l2_ctrl_ref)列表(可能是指向其它处理程序所拥有的控件???).提供了三种以下查找策略:<br>1)最近查找<br>&ensp;&ensp;v4l2_ctrl_handler缓存上一次查找的v4l2_ctrl对象,以加快每次查找速度.<br>2)根椐id查找相应v4l2_ctrl对象<br>&ensp;&ensp;v4l2_ctrl_handler采用hash单向列表的方式管理所有的控件引用.<br>查找指定id的v4l2_ctrl:<br>&ensp;a.根椐id得到相应的buckets的v4l2_ctrl_ref单向列表<br>&ensp;b.轮循v4l2_ctrl_ref单向列表得到相应的v4l2_ctrl_ref,再由v4l2_ctrl_ref得到对应的v4l2_ctrl.<br>3)根椐id查找下一个v4l2_ctrl对象<br>&ensp;&ensp;v4l2_ctrl_handler 采用排序列表方式管理所有的v4l2_ctrl_ref,按照v4l2_ctrl的id大小以升序方式排序.<br>查找指定id的下一个v4l2_ctrl:<br>&ensp;a.根据2)方式查找v4l2_ctrl,取此v4l2_ctrl的下一个v4l2_ctrl.如应用不知设备支持哪些v4l2_ctrl,故需枚举所有支持的v4l2_ctrl.<br>&ensp;b.轮循此排序列表.<br>                                                                    <img src="/2020/04/22/v4l2-ctrl/v4l2_ctrl.png" class></p>
 <center>图1 v4l2_ctrl主要数据结构关系图</center>
 
 
@@ -230,10 +230,13 @@
         
     <div class="post-nav">
       <div class="post-nav-item">
-    <a href="/2020/04/07/v4l2-videobuf/" rel="prev" title="v4l2-videobuf">
-      <i class="fa fa-chevron-left"></i> v4l2-videobuf
+    <a href="/2020/04/07/v4l2-videobuf/" rel="prev" title="v4l2-videobuf(v1.0)">
+      <i class="fa fa-chevron-left"></i> v4l2-videobuf(v1.0)
     </a></div>
-      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/2020/04/27/v4l2-event/" rel="next" title="v4l2-event(v1.0)">
+      v4l2-event(v1.0) <i class="fa fa-chevron-right"></i>
+    </a></div>
     </div>
       </footer>
     
@@ -306,9 +309,14 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">3</span>
+          <span class="site-state-item-count">6</span>
           <span class="site-state-item-name">日志</span>
         </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
 </div>

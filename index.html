@@ -145,6 +145,239 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/06/04/fs-filetable/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="xbliu">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="个人博客 xbliu">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/06/04/fs-filetable/" class="post-title-link" itemprop="url">fs-filetable</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2020-06-04 22:36:22 / 修改时间：23:40:34" itemprop="dateCreated datePublished" datetime="2020-06-04T22:36:22+08:00">2020-06-04</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;应用程序开发过程中,想要操作文件,总避免不了使用open系统调用,当调用open函数时会返回一个文件句柄(fd),每次open成功都会返回不同的fd.那么内核空间如何管理它们呢?</p>
+<h1 id="二、fd-概念"><a href="#二、fd-概念" class="headerlink" title="二、fd 概念"></a>二、fd 概念</h1><p>&ensp;&ensp;&ensp;&ensp;fd全称file descriptor,常言道linux下一切皆文件.也就是说所有都可以通过文件操作来完成.文件操作四大核心操作api:open,read,write,close.其中open是其它操作的基础,因为fd是open返回给用户空间,是识别此已打开文件的唯一依据,后续操作都依赖它.跟踪open系统调用流程可以发现,实际上用户空间的fd就是以下结构中fd数组的索引:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">task_struct</span>//进程</span></span><br><span class="line"><span class="class">---&gt;</span></span><br><span class="line"><span class="class">	<span class="title">struct</span> <span class="title">files_struct</span> *<span class="title">files</span>//打开文件信息</span></span><br><span class="line"><span class="class">	---&gt;</span></span><br><span class="line"><span class="class">		<span class="title">struct</span> <span class="title">fdtable</span> <span class="title">rcu</span> *<span class="title">fdt</span>//文件描述符表</span></span><br><span class="line"><span class="class">		---&gt;</span></span><br><span class="line"><span class="class">			<span class="title">struct</span> <span class="title">file</span> <span class="title">rcu</span> **<span class="title">fd</span>//文件</span></span><br></pre></td></tr></table></figure>
+
+<h1 id="三、关键数据结构"><a href="#三、关键数据结构" class="headerlink" title="三、关键数据结构"></a>三、关键数据结构</h1><p>&ensp;&ensp;&ensp;&ensp;内核用fdtable结构来管理fd,具体如下:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">fdtable</span> &#123;</span></span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">int</span> max_fds;</span><br><span class="line">	<span class="class"><span class="keyword">struct</span> <span class="title">file</span> __<span class="title">rcu</span> **<span class="title">fd</span>;</span></span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *close_on_exec;</span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *open_fds;</span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *full_fds_bits;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">1)max_fds:</span><br><span class="line">	当前允许分配fd的最大值</span><br><span class="line">2)fd:</span><br><span class="line">	内核空间用struct file来描述一个文件对象,用户空间用fd(file descriptor)表示一个文件对象.</span><br><span class="line">fd实际上是一个数组,它维护着所有打开的文件信息,其数组成员(struct file)用于内核空间操作文件,对应的数组下标用于用户空间操作文件,可避免数据直接暴露给用户空间.</span><br><span class="line">3)close_on_exec:</span><br><span class="line">	记录每个已打开文件close_on_exec的情况,一位表示一个已打开文件的close_on_exec信息.</span><br><span class="line">close_on_exec表示在调用系统调用execve()时需要关闭此文件.</span><br><span class="line">4)open_fds:</span><br><span class="line">	记录已打开(已使用)的fd情况,每一位表示一个fd的使用情况,1:表示已使用 0:表示未使用.</span><br><span class="line">5)full_fds_bits:</span><br><span class="line">	每一位表示连续BITS_PER_BYTE个fd的使用情况,1:表示全使用 0:表示未全使用.</span><br></pre></td></tr></table></figure>
+
+<h1 id="四、文件描述符表分配策略"><a href="#四、文件描述符表分配策略" class="headerlink" title="四、文件描述符表分配策略"></a>四、文件描述符表分配策略</h1><p>&ensp;&ensp;&ensp;&ensp;在系统中资源是有限的,所以一个进程中可打开的文件数量是有限制的,可以通过/proc/$pid/limits查看Max open files限制.虽然规定了进程可打开文件数量的上限,但这并不意味着进程会用完所有的文件描述,若一开始时就分配所有的资源,这无疑是一种浪费.<br>因此内核空间对于fdtable的分配采取默认与动态分配两种策略:<br>&ensp;&ensp;默认策略就是当进程开始创建时,分配一个固定数量的文件描述所需的资源,此数量为BITS_PER_LONG.<br>&ensp;&ensp;动态分配就是当已打开的文件描述数量超出现有可分配最大数量时重新分配所需资源.每次以2的n次方的1024B/sizeof(struct file *)来递增扩充fd的容量,完成旧数据迁移后释放掉旧数据占用的内存(默认的fdtable除外).</p>
+<h1 id="五、文件描述符分配管理"><a href="#五、文件描述符分配管理" class="headerlink" title="五、文件描述符分配管理"></a>五、文件描述符分配管理</h1><p>&ensp;&ensp;&ensp;&ensp;fdtable使用fd数组记录分配的文件对象,用open_fds数组成员的每一bit表示相应下标fd数组成员的分配状况.如数组成员open_fds[i],其类型为unsigned long.那么open_fds[i]的第j位表示fd数组成员fd[i*BITS_PER_LONG+j]分配状况,bit 0表示未分配,1表示已分配.<br>&ensp;&ensp;用full_fds_bits数组成员的每1 bit表示相应下标open_fds数组成员的分配状况.如数组成员full_fds_bits[i],其类型为unsigned long,那么full_fds_bits[i]的第j位表示open_fds[i*BITS_PER_LONG+j]的分配状况.1表示其全部分配完,即open_fds[i*BITS_PER_LONG+j]的每1bit都为1,bit 0表示未全使用,即不全为1的情况.<br>之所示这样分级设计是为了加速查找速度.就如我们在中国地图上查找某一个县,我们先是确定省份,再确定市最后确定县一样.通过逐步的缩小查找范围,最后找到符合要求的.<br>所以查找未使用的fd的步骤如下:<br>&ensp;&ensp;1)在给定范围内[start,max]查找full_fds_bits数组[start/BITS_PER_LONG,max/BITS_PER_LONG]范围内中第一个为0的bit.<br>&ensp;&ensp;2)查找对应的open_fds数组成员中第一个为0的bit.<br>内核中查找未使用的bit的函数为find_next_zero_bit.若start=0的话,那么按照以上的查找步骤即使有相应的bit被置1,也还是要比较一次,这样的比较是没有必要的.因此内核在struct files_struct增加了next_fd成员,记录下一次开始查找的位置.<br>next_fd值更改有以下两种情况:<br>1)每次成功找到一个可用fd,next_fd等于此可用fd+1(next_fd=fd+1).<br>2)每次关闭一个文件,若此closed fd小于next_fd,next_fd等于closed fd(next_fd=fd).这样可以很快的复用关闭的fd.整个文件描述符相关的结构如下图:<br>                                                            <img src="/2020/06/04/fs-filetable/fs_fdtab.png" class></p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/05/08/v4l2-media/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="xbliu">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="个人博客 xbliu">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/05/08/v4l2-media/" class="post-title-link" itemprop="url">v4l2_media(v1.0)</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2020-05-08 21:52:17" itemprop="dateCreated datePublished" datetime="2020-05-08T21:52:17+08:00">2020-05-08</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-05-16 23:19:02" itemprop="dateModified" datetime="2020-05-16T23:19:02+08:00">2020-05-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;媒体设备越来越多的处理多种相关功能,如:<br>1)许多USB摄像头包括麦克风<br>2)视频采集硬件也可以输出视频<br>3)SoC摄像头接口也可以执行类似于视频编解码器的内存到内存的操作.<br>独立的功能即可在同一硬件中实现,也可以被建模为独立的设备.这些设备的关系随着越来越多先进的SoC设备的推出,拓扑结构变得越来越复杂.<br>&ensp;尽管v4l2对设备各组件抽象出了v4l2 device与v4l2 subdevs,但是v4l2 device与v4l2 subdev以及v4l2 subdev之间数据流向并未建立,即它们之间数据流向关系需要自已建立.故需要一套框架来发现设备内部各组件数据流向的拓朴关系,运行时配置,减少驱动开发的难度.</p>
+<h1 id="二、gstreamer多媒体概念"><a href="#二、gstreamer多媒体概念" class="headerlink" title="二、gstreamer多媒体概念"></a>二、gstreamer多媒体概念</h1><p>&ensp;&ensp;&ensp;&ensp;多媒体开源播放器众所周知的有gstreamer,VLC,ffmpeg等,其中gstreamer是为了解决linux平台下多媒体的应用开发问题而设计的.gstreamer 框架有以下两个优点:<br>1)插件组件机制:能够复用其它的多媒体框架.<br>2)视频管道(pipeline)的创意.<br>&ensp;&ensp;&ensp;&ensp;多媒体有如下典型行为：<br>1)读取文件<br>2)不同格式的编解码<br>3)从硬件采集设备上采集数据<br>4)在硬件设备上播放多媒体<br>5)多个流的复用<br>&ensp;&ensp;gstreamer根椐以上行为抽象出以下对象:<br>元件(element)对象:参与数据处理的各个功能模块(多媒体行为).<br>管道(pipe):由数据流经过的所有元件组成.即元件是管道最小的构建单元.<br>衬垫(pad):元件(element)与外界的连接通道,对于某个特定元件来说,其能够处理的媒体类型正是通过衬垫暴露给其它元件的.元件具有大量的pads,它们是source或者sink pads.source pads提供数据,sink pads消耗数据.<br>链接(link):建立src pad与sink pad的定向连接<br>&ensp;&ensp;gstreamer还有Bin的概念但这不是我们讨论的主题.那么多媒体框架跟它又有什么关系呢?</p>
+<h1 id="三、media框架"><a href="#三、media框架" class="headerlink" title="三、media框架"></a>三、media框架</h1><h2 id="1-多媒体设备模型"><a href="#1-多媒体设备模型" class="headerlink" title="1.多媒体设备模型"></a>1.多媒体设备模型</h2><p>&ensp;&ensp;&ensp;&ensp;为了建立拓朴关系,多媒体抽象出以下对象:<br>实体(entity):一个基本的媒体硬件或软件构件.它可以对应大量的逻辑块,如物理硬件设备(例如CMOS传感器)、逻辑硬件设备(片上系统图像处理流水线中的构建块)、DMA通道或物理连接器等.<br>接口(interface):Linux内核用户空间API接口的图形表示,如设备节点或sysfs文件,控制图形中的一个或多个实体,代表多媒体设备节点.<br>衬垫(pad):一个数据连接端点,通过它,一个实体可以与其他实体进行交互.由实体产生的数据(不限于视频)从实体的输出流向一个或多个实体的输入<br>数据链路:两个pad之间的点对点定向连接,可以是同一实体上的,也可以是不同实体上的.数据从一个源pad流向一个终端pad<br>接口链路:Linux内核接口和实体之间的点对点双向控制连接.<br>&ensp;&ensp;对比media 与gstreamer概念,不难发现:<br>1)entity相当于element,代表v4l2_subdev或v4l2_dev.<br>2)pipe、pad一样,link几乎一样.<br>两者几乎相同,但有以下区别:<br>1)侧重点不一样:<br>&ensp;&ensp;gstreamer侧重的是各组件功能实现,pipe建立是为了更好服务功能,且运行时只有一条管道.<br>media侧重的是各组件之间的关系,即哪些组件可组成一条pipe,运行时多个pipe可同时存在.<br>2)link的目的不一样<br>&ensp;&ensp;gstreamer link不仅建立pad的关系(peer)且具有传递数据流的功能.<br>media link不仅可建立两个pad的关系,还可建立entity可与interface的关系,<br>但不具备传递数据功能,因为数据流走的硬件通道.<br>多媒体对象关系如下图:<br>                                                <img src="/2020/05/08/v4l2-media/media_obj.png" class></p>
+<h2 id="2-多媒体元素之间的关联"><a href="#2-多媒体元素之间的关联" class="headerlink" title="2.多媒体元素之间的关联"></a>2.多媒体元素之间的关联</h2><p>&ensp;&ensp;&ensp;&ensp;media entity关联方式分为两种:<br>1)media pad关联<br>&ensp;&ensp;media_entity至少包含一个pad,pad分为source pad与sink pad,source pad表示流的输出端点,sink pad表示流的输入端点.两个media entity可通过media link将一端的source pad与另一端的sink pad关联起来.实际上media link含有source pad与sink pad的指针,所谓的建立连接实际上是media link的pad的指针指向各自的pad,然后media link加入到media entity的link列表中(两端的entity各自创建link加入到各自的link列表).<br>2)media_entity与media_interface关联<br>&ensp;&ensp;video_device 设备节点是用户空间访问的切入点,作为流的终点或者发源地,video_device是内核空间 v4l2的切入点,也被看作一个media entity.设备节点与video device entity之间有数据流动.故media_intf_devnode可关联上video_device entity,若video device对应的是v4l2子设备,它也将关联上vl42-sub entity.</p>
+<h2 id="3-多媒体pipe管理"><a href="#3-多媒体pipe管理" class="headerlink" title="3.多媒体pipe管理"></a>3.多媒体pipe管理</h2><p>1)流媒体启动/停止<br>&ensp;&ensp;当流媒体启动后,链接状态不应该被修改, 故开启时驱动程序必须通知管道中所有实体此事件.media_pipeline_start正是因此而设计,它做了以下几件事:<br>a)对所有使能的实体进行图深度遍历(pipe用bitmap记录所有访问过的entity)<br>b)对entity的stream_count自增(防止开启过程中entity对link进行属性更改),记录pipe<br>c)对所有的终端实体的source pad与sink pad进行属性验证(一个enity即可以是源实体也可以是终端实体)<br>d)检查实体是否存在必须建立的link<br>&ensp;&ensp;流媒体停止实现就比较简单了,图深度遍历所有使能的实体,对它的stream_count自减,当stream_count为0时,从pipe中清除<br>2)单个pipe的开启<br>&ensp;&ensp;大都时候流媒体开启时并不希望无关的entity的流功能开启,而media_pipeline_start进行的是深度遍历,即此pipe记录了所有使能的entity.这跟期望的pipe开启是有差距的,所以v4l2提供了两个media_graph_walk_start与media_graph_walk_next两个基础接口供驱动开发者自已实现期望的pipe.<br>&ensp;&ensp;media_pipeline_start也是调用上两个基础接口实现,为什不一步到位呢?因为硬件拓朴关系太复杂了,可能存在多个pipe,没有办法知道哪个pipe是期望开启的,只有驱动开发者自已知道.试想一下,从entity A的sourc pad到sink pad entity B,而这此时entity B的source pad 有多个?即有分叉,算法如何判断哪一个是有效的呢?<br>3)v4l2 流功能开启<br>&ensp;&ensp;pipe记录相关的entity,由于v4l2_subdev也是entity,所以可根椐entity得到相应的v4l2_subdev,再对它进行流操作(ops-&gt;video-&gt;s_stream).</p>
+<h2 id="4-多媒体对象管理"><a href="#4-多媒体对象管理" class="headerlink" title="4.多媒体对象管理"></a>4.多媒体对象管理</h2><p>&ensp;&ensp;&ensp;&ensp;多媒体设备框架虽然是为了驱动开发方便建立设备拓朴关系,但也同时通过字符设备允许用户空间操作entity.字符驱动抽象出meida_device代表多媒体设备,管理entity的id分配(entity具有唯一性,通过id区分),并且管理所有entity、interface、pad、link.meida_device与v4l2_device一一对应.</p>
+<p>gobj是entity,link,pad,interface的基类,整个关系图如下:<br>                                                <img src="/2020/05/08/v4l2-media/meida_framework.png" class></p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/04/27/v4l2-event/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="xbliu">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="个人博客 xbliu">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2020/04/27/v4l2-event/" class="post-title-link" itemprop="url">v4l2-event(v1.0)</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2020-04-27 21:19:35" itemprop="dateCreated datePublished" datetime="2020-04-27T21:19:35+08:00">2020-04-27</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-05-16 23:18:54" itemprop="dateModified" datetime="2020-05-16T23:18:54+08:00">2020-05-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;当用户在进行视频聊天时,不小心碰到摄像头使其接触不良,若软件不知此种情况,它将会出现异常,会给用户带来不好的体验.当视频源发生变化也一样的,因为视频源的改变会导致视频分辩率支持的变化.因此v4l2提供了一种将事件传递给用户空间的通用方式(v4l2 event),让用户空间可以关注特定事件的发生,从而处理此类特殊事件.</p>
+<h1 id="二、v4l2-event"><a href="#二、v4l2-event" class="headerlink" title="二、v4l2_event"></a>二、v4l2_event</h1><p>&ensp;&ensp;&ensp;&ensp;事件由一个类型和一个可选的ID定义,ID可以指的是V4L2对象,如控件ID,若未使用,则ID为0.不同的事件想要传递的消息都不尽相同,v4l2_event采用联合体的形式传递不同事件的消息(大概是因为目前事件类型不是很多的原故),而且每个事件都记录了发生的时间.<br>&ensp;&ensp;&ensp;&ensp;事件有标准事件和私有事件之分,新的标准事件必须使用最小的可用事件类型.驱动必须从他们本类型的编号起始处分配事件.类型的编号起始为V4L2_EVENT_PRIVATE_START + n * 1000,其中 n 为可用最小编号.每个类型中的第一个事件类型编号是为以后的使用保留的,所以第一个可用事件类型编号是‘class base + 1’.</p>
+<h1 id="三、v4l2-event管理"><a href="#三、v4l2-event管理" class="headerlink" title="三、v4l2_event管理"></a>三、v4l2_event管理</h1><p>&ensp;&ensp;&ensp;&ensp;每个视频节点支持用户空间多次打开,一次打开对应一个v4l2_fh,用来跟踪此次操作的内容.v4l2 event属于跟踪的内容之一,负责将事件传递给每一个打开此设备节点的用户.<br>&ensp;&ensp;&ensp;&ensp;v4l2 event采用订阅发布的模式(即观察者模式)来通知用户空间事件发生变化.</p>
+<h2 id="1-v4l2-fh事件管理"><a href="#1-v4l2-fh事件管理" class="headerlink" title="1.v4l2_fh事件管理"></a>1.v4l2_fh事件管理</h2><p>&ensp;&ensp;&ensp;&ensp;v4l2_fh拥有以下两个列表:<br>1).订阅事件列表(subscribed)<br>&ensp;&ensp;每一个订阅事件都被加入此列表,发布事件时会查询该事件是否已订阅,若未订阅,则直接丢弃.<br>2).可用事件列表(available)<br>&ensp;&ensp;用户可以订阅多个事件,每个订阅事件可缓存多个v4l2_kevent事件,而所有已发生的订阅事件(v4l2_kevent)都链接到可用事件列表中,这样用户空间VIDIOC_DQEVENT时就会知道要先取出哪个事件.</p>
+<h2 id="2-v4l2-subscribed-event事件管理"><a href="#2-v4l2-subscribed-event事件管理" class="headerlink" title="2.v4l2_subscribed_event事件管理"></a>2.v4l2_subscribed_event事件管理</h2><p>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;当用户订阅一个事件时,v4l2 event将分配一个数量的事件的v4l2_kevent结构.所以每个(类型,ID)事件元组都会有它自己的v4l2_kevent结构集.这保证了即使一个驱动短时间内发生大量同类型的事件,也不会覆盖另一种类型的事件.实际上分配的v4l2_kevent是一个数组,此数组用来存储由驱动触发的事件.<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;v4l2_kevent采用环形队列的方式缓存,但与经典的font(记录当前出队序号),rear(记录当前入队序号)实现方式不一样.而是由first记录出队事件序号,in_use记录已使用事件的个数,elems记录可缓存的最大数目.当前入队的序号(idx=in_use)与下一个出队的序号(idx=1)由以下代码计算:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">static unsigned sev_pos(const struct v4l2_subscribed_event *sev, unsigned idx)</span><br><span class="line">&#123;</span><br><span class="line">	idx +&#x3D; sev-&gt;first;</span><br><span class="line">	return idx &gt;&#x3D; sev-&gt;elems ? idx - sev-&gt;elems : idx;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>&ensp;&ensp;&ensp;&ensp;另当此类型的事件数量超过了之前的保留,那么最老的事件将被丢弃,新的事件将被添加.v4l2_subscribed_event提供了merge()与replace()回调,实现此功能:<br>&ensp;&ensp;replace()允许你用新事件的负载替换旧事件的负载,将旧的有效载荷中的相关数据合并到新的有效载荷中,而新的有效载荷是取代它.当这个事件类型只有一个分配的kevent结构时,它被调用.<br>&ensp;&ensp;merge()回调允许你合并最老的事件有效载荷到次要事件有效载荷中,当有两个或更多分配的v4l2_kevent结构.这种方式不会丢失任何状态信息,只会丢失该状态的中间步骤的信息.<br>&ensp;&ensp;&ensp;&ensp;注意：这些回调可以从中断上下文中调用，所以它们必须很快的执行完.</p>
+<center>v4l2 event框架图如下:</center>
+
+<p>​                                                                    <img src="/2020/04/27/v4l2-event/v4l2_event_fw.png" class></p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
     <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/04/22/v4l2-ctrl/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -159,7 +392,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2020/04/22/v4l2-ctrl/" class="post-title-link" itemprop="url">v4l2_ctrl(草稿)</a>
+            <a href="/2020/04/22/v4l2-ctrl/" class="post-title-link" itemprop="url">v4l2_ctrl(v1.0)</a>
         </h2>
 
         <div class="post-meta">
@@ -168,9 +401,24 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">发表于</span>
-              
 
-              <time title="创建时间：2020-04-22 00:20:08 / 修改时间：00:48:41" itemprop="dateCreated datePublished" datetime="2020-04-22T00:20:08+08:00">2020-04-22</time>
+              <time title="创建时间：2020-04-22 00:20:08" itemprop="dateCreated datePublished" datetime="2020-04-22T00:20:08+08:00">2020-04-22</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-05-16 23:18:08" itemprop="dateModified" datetime="2020-05-16T23:18:08+08:00">2020-05-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
             </span>
 
           
@@ -184,29 +432,14 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>​        V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已处理,而且处理控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加/设置控件、获取/验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地使驱动开发变得更简单.</p>
-<h1 id="二、v4l2-ctrl基本元素"><a href="#二、v4l2-ctrl基本元素" class="headerlink" title="二、v4l2_ctrl基本元素"></a>二、v4l2_ctrl基本元素</h1><p>​        视频设备各种各样,属性也不一.但是从开发语言角度来看,都可以用数据类型表示.</p>
-<h2 id="1-单项类型v4l2-ctrl"><a href="#1-单项类型v4l2-ctrl" class="headerlink" title="1.单项类型v4l2_ctrl"></a>1.单项类型v4l2_ctrl</h2><p>​        由一个基本类型或自定义类型组成的v4l2_ctrl,其中自定义类型可看成一整体项.</p>
-<p>​    这些与开发语言基本类型(整型、字符)与struct一一对应.属性一般由区间值组成,故有<strong>minimum, maximum, default_value</strong>三个基本元素.从minimum增长到maximum,并非一步步的增长,故有<strong>step</strong>表示一次增长值.</p>
-<h2 id="2-多项类型v4l2-ctrl"><a href="#2-多项类型v4l2-ctrl" class="headerlink" title="2.多项类型v4l2_ctrl"></a>2.多项类型v4l2_ctrl</h2><p>​        由多个同一类型组成的v4l2_ctrl,与数组对应.数组分为一维数组与多维数组.</p>
-<p>​    一维数组中对应的功能选择项ctrl叫做memu.并非同类设备都支持这些选项,很有可能是其中一个子集，故用<strong>menu_skip_mask</strong>元素表示支持哪些子选项,最大可支持64个子选项,常见的menu是整型与字符型的,用<strong>qmenu_int</strong>与<strong>qmenu</strong>联合体表示.</p>
-<p>​    多维数组表示那些非功能性选择项的同类型,数目常大于1,由<strong>elems,elem_size,dims,nr_of_dims</strong>四项表示.dims存放每个维度元素个数，最多可支持四维数组.</p>
-<h2 id="3-关联性v4l2-ctrl"><a href="#3-关联性v4l2-ctrl" class="headerlink" title="3.关联性v4l2_ctrl"></a>3.关联性v4l2_ctrl</h2><p>​        v4l2_ctrl之间可能是相互独立的,也有可能存在依赖关系,如音量大小是否有效取决于是否静音,此时一个v4l2_ctrl的设置影响其它v4l2_ctrl的设置.面对这种复杂的场景,设置时需要知道两者的依赖关系,v4l2_ctrl中用<strong>cluster</strong>建立这种依赖关系.</p>
-<h1 id="三、v4l2-ctrl管理"><a href="#三、v4l2-ctrl管理" class="headerlink" title="三、v4l2_ctrl管理"></a>三、v4l2_ctrl管理</h1><pre><code>一个视频节点有多个v4l2_ctrl,v4l2_ctrl的目的是让用户可以设置设备的属性,但在设置之前需要得到相应的v4l2_ctrl.</code></pre><h2 id="1-v4l2-ctrl唯一标识"><a href="#1-v4l2-ctrl唯一标识" class="headerlink" title="1.v4l2_ctrl唯一标识"></a>1.v4l2_ctrl唯一标识</h2><p>​        采用id作为唯一标识,name作为辅助.</p>
-<h2 id="2-v4l2-ctrl-handler"><a href="#2-v4l2-ctrl-handler" class="headerlink" title="2.v4l2_ctrl_handler"></a>2.v4l2_ctrl_handler</h2><p>​        跟踪视频节点下所有控件对象.它维护着一个所拥有的v4l2_ctrl对象列表以及另一个指向控件的引用(v4l2_ctrl_ref)列表(可能是指向其它处理程序所拥有的控件???).提供了三种以下查找策略:</p>
-<p>1)最近查找</p>
-<p>​    v4l2_ctrl_handler缓存上一次查找的v4l2_ctrl对象,以加快每次查找速度.</p>
-<p>2)根椐id查找相应v4l2_ctrl对象   </p>
-<p>​    v4l2_ctrl_handler采用hash单向列表的方式管理所有的控件引用.</p>
-<p>查找指定id的v4l2_ctrl:   </p>
-<p>​    a.根椐id得到相应的buckets的v4l2_ctrl_ref单向列表   </p>
-<p>​    b.轮循v4l2_ctrl_ref单向列表得到相应的v4l2_ctrl_ref,再由v4l2_ctrl_ref得到对应的v4l2_ctrl.</p>
-<p>3)根椐id查找下一个v4l2_ctrl对象   </p>
-<p>​    v4l2_ctrl_handler 采用排序列表方式管理所有的v4l2_ctrl_ref,按照v4l2_ctrl的id大小以升序方式排序.</p>
-<p>查找指定id的下一个v4l2_ctrl:   </p>
-<p>​    a.根据2)方式查找v4l2_ctrl,取此v4l2_ctrl的下一个v4l2_ctrl.如应用不知设备支持哪些v4l2_ctrl,故需枚举所有支持的v4l2_ctrl.   </p>
-<p>​    b.轮循此排序列表.</p>
-<p>​                                                                        <img src="/2020/04/22/v4l2-ctrl/v4l2_ctrl.png" class></p>
+          <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;V4l2 control api由驱动直接实现,看似简单有效,但是很快就变得很难在驱动程序中正确实现,因为所有的事情都需驱动自已实现,但是实现控制所需很多代码实际上并不是驱动程序特有的(即可以通用),而且驱动唯一关心的是添加/设置控件、获取/验证控制值,所有其它的事情都可以由v4l2框架集中完成,实现v4l2规范中关于控制的所有规则,尽可能地使驱动开发变得更简单.</p>
+<h1 id="二、v4l2-ctrl基本元素"><a href="#二、v4l2-ctrl基本元素" class="headerlink" title="二、v4l2_ctrl基本元素"></a>二、v4l2_ctrl基本元素</h1><p>&ensp;&ensp;&ensp;&ensp;视频设备各种各样,属性也不一.但是从开发语言角度来看,都可以用数据类型表示.</p>
+<h2 id="1-单项类型v4l2-ctrl"><a href="#1-单项类型v4l2-ctrl" class="headerlink" title="1.单项类型v4l2_ctrl"></a>1.单项类型v4l2_ctrl</h2><p>&ensp;&ensp;&ensp;&ensp;由一个基本类型或自定义类型组成的v4l2_ctrl,其中自定义类型可看成一整体项.<br>&ensp;&ensp;这些与开发语言基本类型(整型、字符)与struct一一对应.属性一般由区间值组成,故有<strong>minimum, maximum, default_value</strong>三个基本元素.从minimum增长到maximum,并非一步步的增长,故有<strong>step</strong>表示一次增长值.</p>
+<h2 id="2-多项类型v4l2-ctrl"><a href="#2-多项类型v4l2-ctrl" class="headerlink" title="2.多项类型v4l2_ctrl"></a>2.多项类型v4l2_ctrl</h2><p>&ensp;&ensp;&ensp;&ensp;由多个同一类型组成的v4l2_ctrl,与数组对应.数组分为一维数组与多维数组.<br>&ensp;&ensp;一维数组中对应的功能选择项ctrl叫做memu.并非同类设备都支持这些选项,很有可能是其中一个子集，故用<strong>menu_skip_mask</strong>元素表示支持哪些子选项,最大可支持64个子选项,常见的menu是整型与字符型的,用<strong>qmenu_int</strong>与<strong>qmenu</strong>联合体表示.<br>&ensp;&ensp;多维数组表示那些非功能性选择项的同类型,数目常大于1,由<strong>elems,elem_size,dims,nr_of_dims</strong>四项表示.dims存放每个维度元素个数，最多可支持四维数组.</p>
+<h2 id="3-关联性v4l2-ctrl"><a href="#3-关联性v4l2-ctrl" class="headerlink" title="3.关联性v4l2_ctrl"></a>3.关联性v4l2_ctrl</h2><p>&ensp;&ensp;&ensp;&ensp;v4l2_ctrl之间可能是相互独立的,也有可能存在依赖关系,如音量大小是否有效取决于是否静音,此时一个v4l2_ctrl的设置影响其它v4l2_ctrl的设置.面对这种复杂的场景,设置时需要知道两者的依赖关系,v4l2_ctrl中用<strong>cluster</strong>建立这种依赖关系.</p>
+<h1 id="三、v4l2-ctrl管理"><a href="#三、v4l2-ctrl管理" class="headerlink" title="三、v4l2_ctrl管理"></a>三、v4l2_ctrl管理</h1><p>&ensp;&ensp;&ensp;&ensp;一个视频节点有多个v4l2_ctrl,v4l2_ctrl的目的是让用户可以设置设备的属性,但在设置之前需要得到相应的v4l2_ctrl.</p>
+<h2 id="1-v4l2-ctrl唯一标识"><a href="#1-v4l2-ctrl唯一标识" class="headerlink" title="1.v4l2_ctrl唯一标识"></a>1.v4l2_ctrl唯一标识</h2><p>&ensp;&ensp;&ensp;&ensp;采用id作为唯一标识,name作为辅助.</p>
+<h2 id="2-v4l2-ctrl-handler"><a href="#2-v4l2-ctrl-handler" class="headerlink" title="2.v4l2_ctrl_handler"></a>2.v4l2_ctrl_handler</h2><p>&ensp;&ensp;&ensp;&ensp;跟踪视频节点下所有控件对象.它维护着一个所拥有的v4l2_ctrl对象列表以及另一个指向控件的引用(v4l2_ctrl_ref)列表(可能是指向其它处理程序所拥有的控件???).提供了三种以下查找策略:<br>1)最近查找<br>&ensp;&ensp;v4l2_ctrl_handler缓存上一次查找的v4l2_ctrl对象,以加快每次查找速度.<br>2)根椐id查找相应v4l2_ctrl对象<br>&ensp;&ensp;v4l2_ctrl_handler采用hash单向列表的方式管理所有的控件引用.<br>查找指定id的v4l2_ctrl:<br>&ensp;a.根椐id得到相应的buckets的v4l2_ctrl_ref单向列表<br>&ensp;b.轮循v4l2_ctrl_ref单向列表得到相应的v4l2_ctrl_ref,再由v4l2_ctrl_ref得到对应的v4l2_ctrl.<br>3)根椐id查找下一个v4l2_ctrl对象<br>&ensp;&ensp;v4l2_ctrl_handler 采用排序列表方式管理所有的v4l2_ctrl_ref,按照v4l2_ctrl的id大小以升序方式排序.<br>查找指定id的下一个v4l2_ctrl:<br>&ensp;a.根据2)方式查找v4l2_ctrl,取此v4l2_ctrl的下一个v4l2_ctrl.如应用不知设备支持哪些v4l2_ctrl,故需枚举所有支持的v4l2_ctrl.<br>&ensp;b.轮循此排序列表.<br>                                                                    <img src="/2020/04/22/v4l2-ctrl/v4l2_ctrl.png" class></p>
 <center>图1 v4l2_ctrl主要数据结构关系图</center>
 
 
@@ -242,7 +475,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2020/04/07/v4l2-videobuf/" class="post-title-link" itemprop="url">v4l2-videobuf</a>
+            <a href="/2020/04/07/v4l2-videobuf/" class="post-title-link" itemprop="url">v4l2-videobuf(v1.0)</a>
         </h2>
 
         <div class="post-meta">
@@ -253,6 +486,22 @@
               <span class="post-meta-item-text">发表于</span>
 
               <time title="创建时间：2020-04-07 22:00:38" itemprop="dateCreated datePublished" datetime="2020-04-07T22:00:38+08:00">2020-04-07</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-05-16 23:19:10" itemprop="dateModified" datetime="2020-05-16T23:19:10+08:00">2020-05-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
             </span>
 
           
@@ -266,7 +515,24 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          
+          <h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>&ensp;&ensp;&ensp;&ensp;videobuf作为V4L2驱动和用户空间之间的中间层,它处理存储视频帧的缓冲区的分配和管理,减少了驱动开发工作量,实现了V4L2用户空间API的一致性.<br>它分为以下三层:<br>&ensp;&ensp;1)v4l2设备接口层:为v4l2设备提供了v4l2_ioctl的流控与文件操作<br>&ensp;&ensp;2)videobuf核心层:视频缓冲队列与状态管理<br>&ensp;&ensp;3)videobuf驱动层:视频缓冲内存分配与管理,数据传输</p>
+<h1 id="二、v4l2设备接口层"><a href="#二、v4l2设备接口层" class="headerlink" title="二、v4l2设备接口层"></a>二、v4l2设备接口层</h1><p>&ensp;&ensp;&ensp;&ensp;v4l2设备是videobuf的消费者,videobuf为v4l2设备提供了以下两套接口机制:<br>1)可以用来实现许多标准的POSIX I/O系统调用，包括read()、poll()和mmap(),称之为常规文件api.<br>2)可以用来实现V4L2 ioctl()的大部分与流式I/O相关的调用，包括缓冲区分配，队列和去队列，以及流式控制,称之为流控api.<br>&ensp;&ensp;常规文件api实现了linux原生系统接口,毕竟在linux上一切皆文件.但由于常规的文件操作不能灵活的控制buffer的入队与出队,所以定义了流式控制api.实际上常规文件api依赖于流控api.<br>&ensp;&ensp;接口层是对核心层接口的封装,主要实现了互斥操作与参数检测.</p>
+<h1 id="三、videobuf核心层"><a href="#三、videobuf核心层" class="headerlink" title="三、videobuf核心层"></a>三、videobuf核心层</h1><h2 id="1-主要数据结构"><a href="#1-主要数据结构" class="headerlink" title="1.主要数据结构"></a>1.主要数据结构</h2><p>&ensp;&ensp;&ensp;&ensp;视频流设备数据传输过程中数据是源源不断的,而数据传输的单位是一帧数据,一帧数据的格式是各种各样的,yuv是其中格式之一.yuv按存储格式分为packet(打包格式)与planar(平面格式),packed模式y,u,v交错排列,而planar模式y和u,v的排列是分开的,而具体u与v继续分开或者继续交错排列根据具体的格式相关.也就是说planar模式分为两个平面(y,uv共用一个)与三个平面(y,u,v各用一个平面).因此硬件传输yuv数据时可用多个内存地址传输yuv数据,大概是为了加快传输速度(猜测).<br>&ensp;&ensp;videobuf核心层采用队列方式管理视频缓冲区,包含以下三个主要数据结构:<br>a)vb2_queue代表一个视频缓冲队列<br>b)vb2_buffer代表一个视频缓冲区.<br>c)vb2_planes负责存储与硬件设备传输的数据,即存储一帧数据.<br>     vb2_queue管理多个vb2_buffer, vb2_buffer管理多个vb2_planes.它们的关系如下图:<br>                                   <img src="/2020/04/07/v4l2-videobuf/v4l2_data_relationship.png" alt="image-20200516215913172"></p>
+<h2 id="2-数据传输管理"><a href="#2-数据传输管理" class="headerlink" title="2.数据传输管理"></a>2.数据传输管理</h2><p>1)流媒体传输<br>     视频传输的过程如下:<br>         a.获取下一个可用的缓冲区，并确保确实有人在等待它.<br>         b.获取一个指向内存的指针，将视频数据存储到此.<br>         c.将该缓冲区标记为完成,并唤醒等待它的进程.<br>     所以vb2_queue采用两个队列分别管理入队缓冲区(空闲buffer)与出队缓冲区(已用buffer).整个过程api操作如下:<br>vb2_ioctl_reqbufs,vb2_ioctl_querybuf, vb2_ioctl_qbuf,vb2_ioctl_streamon, vb2_ioctl_dqbuf, vb2_ioctl_streamoff.流程如下图:<br>         <img src="/2020/04/07/v4l2-videobuf/v4l2_buffer_flow.png" alt="image-20200516220951782"><br>2)常规文件传输<br>常规文件传输底层依赖于流媒体传输,但有以下几点区别:<br>a.常规文件操作的单位是字节,即可以多次读写同一个视频缓冲区,流媒体传输操作的单位是视频缓冲区.<br>b.常规文件支持内存类型为mmap,不支持user ptr与dma buf.而流媒体三者都支持.<br>c.常规文件只支持单平面的buffer,不支持多平面的buffer.<br>其主要数据结构如下图:<br>        <img src="/2020/04/07/v4l2-videobuf/v4l2_fileio.png" alt="image-20200516220250066"><br>vb2_fileio_data:队列上下文,负责出队与入队buffer.<br>vb2_fileio_buf:缓冲区上下文,负责记录用户空间与内核空间buffer传输的情况.<br>&ensp;&ensp;常规文件传输buffer queue与dequeu策略如下:<br>1)读 一开始所有的可用buffer立即入队(_vb2_init_fileio),在vb2_perform_fileio只需循环dequeue/queue buffer.<br>2)写 一开始时可用buffer都没有入队,只有当所有可用buffer都入队时,vb2_perform_fileio才会开始dqueue/queue buffer循环操作((initial_index 正是为此设计,记录首次所有可用buffer入队时buffer的索引)<br>总而言之:只有所有可用buffer第一次入队都完成后才有dequeue/queue循环操作</p>
+<h2 id="3-buffer状态管理"><a href="#3-buffer状态管理" class="headerlink" title="3.buffer状态管理"></a>3.buffer状态管理</h2><p>​          videobuf核心层与videobuf驱动层之间有数据传输,其操作的基本单位为buffer.并不是所有状态下的buffer每个操作都有效,因此需要进行buffer状态管理.<br>​     状态切换如下图<br><img src="/2020/04/07/v4l2-videobuf/v4l2_buffer_state.png" alt="image-20200516223351124"></p>
+<p>VB2_BUF_STATE_DEQUEUED:buffer归用户空间控制.<br>VB2_BUF_STATE_PREPARING:buffer正在准备过程中.<br>VB2_BUF_STATE_PREPARED:buffer已完成准备工作.<br>VB2_BUF_STATE_QUEUED:buffer已入队videobuf中,但还未下发给驱动.<br>VB2_BUF_STATE_REQUEUEING:重新将buffer下发到驱动.<br>VB2_BUF_STATE_ACTIVE:buffer已下发给驱动,可能在硬件操作中使用.<br>VB2_BUF_STATE_DONE:buffer已被填充数据帧,从驱动返还给videobuf,但用户空间还未取出.<br>VB2_BUF_STATE_ERROR:buffer接收数据帧时出错,当用户空间取出此帧时会上报错误信息.</p>
+<p>三、videobuf驱动层</p>
+<p>​     从硬件设备角度看不是所有的视频设备都使用同样的缓冲器.事实上,有(至少)三种常见的变化:</p>
+<ul>
+<li><p>散布在物理和(内核)虚拟地址空间的缓冲区。<br> (几乎) 所有的用户空间缓冲区都是这样的,但是在可能的情况下,这样分配内核空间的缓冲区也是非常有意义的.不幸的是,这并不总是可行的;使用这种缓冲区通常需要能够进行分散/收集DMA操作的硬件。</p>
+</li>
+<li><p>缓冲区在物理上是分散的,但实际上是毗连的;换句话说,用vmalloc()分配的缓冲区。<br> 这些缓冲区对DMA操作来说一样难,但在DMA不可用,但几乎毗连的缓冲区却很方便的情况下,这些缓冲区是很有用的.</p>
+</li>
+<li><p>物理毗连的缓冲区。<br>这类缓冲区的分配在碎片化的系统上可能不可靠,但较简单的DMA控制器无法处理其他任何东西.<br> 为此videobuf将视频缓冲内存分配独立出来,根椐三种常见的缓冲类型,实现了dma_contig,dma_sg,vmalloc三种内存分配.这些内存最终要与用户交互,而用户访问它们方式也不一样,分四种类型:mmap,userptr,read/write,dmabuf.为此定义了四类api操作.<br> #) Required ops for USERPTR types: get_userptr, put_userptr.<br>#) Required ops for MMAP types: alloc, put, num_users, mmap.<br>#) Required ops for read/write access types: alloc, put, num_users, vaddr.<br>#) Required ops for DMABUF types: attach_dmabuf, detach_dmabuf, map_dmabuf, unmap_dmabuf.</p>
+<p>总体框图如下:<br><img src="/2020/04/07/v4l2-videobuf/v4l2_vb_framework.png" alt="image-20200516221208918"></p>
+</li>
+</ul>
+
       
     </div>
 
@@ -299,7 +565,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2020/04/07/v4l2-framework/" class="post-title-link" itemprop="url">v4l2_framework(草稿)</a>
+            <a href="/2020/04/07/v4l2-framework/" class="post-title-link" itemprop="url">v4l2_framework(v1.0)</a>
         </h2>
 
         <div class="post-meta">
@@ -316,8 +582,17 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2020-04-22 00:48:36" itemprop="dateModified" datetime="2020-04-22T00:48:36+08:00">2020-04-22</time>
+                <time title="修改时间：2020-05-16 23:18:58" itemprop="dateModified" datetime="2020-05-16T23:18:58+08:00">2020-05-16</time>
               </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/v4l2/" itemprop="url" rel="index"><span itemprop="name">v4l2</span></a>
+                </span>
+            </span>
 
           
 
@@ -330,25 +605,20 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <h2 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h2><p>​        linux多媒体子系统是为了视频与无线电流设备设计,包括摄像机、模拟与数字电视接收卡、AM/FM接收卡、SDR(SoftwareDefinedRadio),流式捕获和输出设备、编解码器与远程控制设备.典型多媒体设备硬件如图1所示.而v4l2是多媒体子系统的一部分,包含了对收音机、视频捕获和输出、摄像机、模拟电视设备和编解码器设备的支持.</p>
+          <h2 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h2><p>&ensp;&ensp;&ensp;&ensp;linux多媒体子系统是为了视频与无线电流设备设计,包括摄像机、模拟与数字电视接收卡、AM/FM接收卡、SDR(SoftwareDefinedRadio),流式捕获和输出设备、编解码器与远程控制设备.典型多媒体设备硬件如图1所示.而v4l2是多媒体子系统的一部分,包含了对收音机、视频捕获和输出、摄像机、模拟电视设备和编解码器设备的支持.</p>
 <p>​                                                <img src="/2020/04/07/v4l2-framework/v4l2_hardware.png" class title="This is an test image"></p>
 <center>图1. 多媒体硬件拓朴图</center>
 
-<h2 id="二、v4l2框架"><a href="#二、v4l2框架" class="headerlink" title="二、v4l2框架"></a>二、v4l2框架</h2><p>​        针对以上硬件拓朴v4l2框架设计如下:</p>
+<h2 id="二、v4l2框架"><a href="#二、v4l2框架" class="headerlink" title="二、v4l2框架"></a>二、v4l2框架</h2><p>&ensp;&ensp;&ensp;针对以上硬件拓朴v4l2框架设计如下:</p>
 <p>​                                                                    <img src="/2020/04/07/v4l2-framework/v4l2_framework.png" class></p>
 <center>图2 v4l2框架图</center>
 
-<h3 id="1-设备抽象实例"><a href="#1-设备抽象实例" class="headerlink" title="1. 设备抽象实例"></a>1. 设备抽象实例</h3><p>​        随着硬件的发展,大多数v4l2设备包含多个IC,通常这些IC通过一个或者多个i2c总线连接到主桥驱动器上,但也可使用其他总线,这些设备称之为子设备.如图1的模拟电视就包含音视频编解码、tuner多个子设备.</p>
-<p>​        v4l2必须支持IC实现音视频的多路复用和编解码,并同时创建非v4l2设备(如dvb,alsa,fb,i2c,红外输入),若仅用video_device代表一个硬件实体,意味着驱动必须自已设置设备实例并连接到子设备上,其中一部分要正确地完成是比较复杂的,而且很多通用代码都不可重复利用.</p>
-<p>因此v4l2抽象出以下设备实例,使得驱动编写更加简单.</p>
-<p>​    v4l2_device:代表整个设备实例–包含其设备状态,负责管理所有子设备,是这些子设备的根结点.</p>
-<p>​    v4l2_subdev:代表子设备,负责子设备的实始化与控制.它可以完成各种任务,但通常负责音视频复用和编解码,如网络摄像头的子设备通常是传感器和摄像头控制器.</p>
-<p>​    video_device:创建v4l2设备节点,为用户层提供通一的访问入口.</p>
-<h3 id="2-设备控制与事件通知"><a href="#2-设备控制与事件通知" class="headerlink" title="2. 设备控制与事件通知"></a>2. 设备控制与事件通知</h3><p>​        子设备通常具有多种可配置的属性:如摄像头具有亮度、饱和度等属性,不同的设备具有不同的属性,因此提供了v4l2_ctrl机制去配置与获取这些属性.</p>
-<p>​        当设备的状态发生变化时用户需要知道,如属性的改变,视频源的改变,因此提供了v4l2_event机制(一个通用的方法)将事件传递到用户空间.</p>
-<h3 id="3-video-buffer处理"><a href="#3-video-buffer处理" class="headerlink" title="3.video buffer处理"></a>3.video buffer处理</h3><p>​        对于视频流设备,用户层与设备存在数据流传输,因此提供了videobuf机制处理视频缓冲.</p>
-<h3 id="4-设备之间数据通道"><a href="#4-设备之间数据通道" class="headerlink" title="4.设备之间数据通道"></a>4.设备之间数据通道</h3><p>​        尽管v4l2_device管理了所有的v4l2_subdev(子设备),但是设备与子设备及子设备与子设备之间的数据流传输通道并未建立,因此提供了media_entiy机制实现设备之间的数据通道连接.</p>
-<h2 id="三、v4l2主要数据结构关系"><a href="#三、v4l2主要数据结构关系" class="headerlink" title="三、v4l2主要数据结构关系"></a>三、v4l2主要数据结构关系</h2><img src="/2020/04/07/v4l2-framework/v4l2_data_struct.png" class>
+<h3 id="1-设备抽象实例"><a href="#1-设备抽象实例" class="headerlink" title="1. 设备抽象实例"></a>1. 设备抽象实例</h3><p>&ensp;&ensp;&ensp;&ensp;随着硬件的发展,大多数v4l2设备包含多个IC,通常这些IC通过一个或者多个i2c总线连接到主桥驱动器上,但也可使用其他总线,这些设备称之为子设备.如图1的模拟电视就包含音视频编解码、tuner多个子设备.<br>&ensp;&ensp;v4l2必须支持IC实现音视频的多路复用和编解码,并同时创建非v4l2设备(如dvb,alsa,fb,i2c,红外输入),若仅用video_device代表一个硬件实体,意味着驱动必须自已设置设备实例并连接到子设备上,其中一部分要正确地完成是比较复杂的,而且很多通用代码都不可重复利用.<br>因此v4l2抽象出以下设备实例,使得驱动编写更加简单.<br>&ensp;&ensp;v4l2_device:代表整个设备实例–包含其设备状态,负责管理所有子设备,是这些子设备的根结点.<br>&ensp;&ensp;v4l2_subdev:代表子设备,负责子设备的实始化与控制.它可以完成各种任务,但通常负责音视频复用和编解码,如网络摄像头的子设备通常是传感器和摄像头控制器.<br>&ensp;&ensp;video_device:创建v4l2设备节点,为用户层提供通一的访问入口.</p>
+<h3 id="2-设备控制与事件通知"><a href="#2-设备控制与事件通知" class="headerlink" title="2. 设备控制与事件通知"></a>2. 设备控制与事件通知</h3><p>&ensp;&ensp;&ensp;&ensp;子设备通常具有多种可配置的属性:如摄像头具有亮度、饱和度等属性,不同的设备具有不同的属性,因此提供了v4l2_ctrl机制去配置与获取这些属性.<br>&ensp;&ensp;当设备的状态发生变化时用户需要知道,如属性的改变,视频源的改变,因此提供了v4l2_event机制(一个通用的方法)将事件传递到用户空间.</p>
+<h3 id="3-video-buffer处理"><a href="#3-video-buffer处理" class="headerlink" title="3.video buffer处理"></a>3.video buffer处理</h3><p>&ensp;&ensp;&ensp;&ensp;对于视频流设备,用户层与设备存在数据流传输,因此提供了videobuf机制处理视频缓冲.</p>
+<h3 id="4-设备之间数据通道"><a href="#4-设备之间数据通道" class="headerlink" title="4.设备之间数据通道"></a>4.设备之间数据通道</h3><p>&ensp;&ensp;&ensp;&ensp;尽管v4l2_device管理了所有的v4l2_subdev(子设备),但是设备与子设备及子设备与子设备之间的数据流传输通道并未建立,因此提供了media_entiy机制实现设备之间的数据通道连接.</p>
+<h2 id="三、v4l2主要数据结构关系"><a href="#三、v4l2主要数据结构关系" class="headerlink" title="三、v4l2主要数据结构关系"></a>三、v4l2主要数据结构关系</h2><p>​                                                                    <img src="/2020/04/07/v4l2-framework/v4l2_data_struct.png" class></p>
+
       
     </div>
 
@@ -429,9 +699,14 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">3</span>
+          <span class="site-state-item-count">6</span>
           <span class="site-state-item-name">日志</span>
         </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
 </div>
