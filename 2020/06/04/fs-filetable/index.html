@@ -29,7 +29,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="http://yoursite.com/2020/06/04/fs-filetable/fs_fdtab.png">
 <meta property="article:published_time" content="2020-06-04T14:36:22.000Z">
-<meta property="article:modified_time" content="2020-06-04T15:40:34.008Z">
+<meta property="article:modified_time" content="2020-06-04T15:46:07.282Z">
 <meta property="article:author" content="xbliu">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="http://yoursite.com/2020/06/04/fs-filetable/fs_fdtab.png">
@@ -176,7 +176,7 @@
               <span class="post-meta-item-text">发表于</span>
               
 
-              <time title="创建时间：2020-06-04 22:36:22 / 修改时间：23:40:34" itemprop="dateCreated datePublished" datetime="2020-06-04T22:36:22+08:00">2020-06-04</time>
+              <time title="创建时间：2020-06-04 22:36:22 / 修改时间：23:46:07" itemprop="dateCreated datePublished" datetime="2020-06-04T22:36:22+08:00">2020-06-04</time>
             </span>
 
           
@@ -197,8 +197,7 @@
 <h1 id="三、关键数据结构"><a href="#三、关键数据结构" class="headerlink" title="三、关键数据结构"></a>三、关键数据结构</h1><p>&ensp;&ensp;&ensp;&ensp;内核用fdtable结构来管理fd,具体如下:</p>
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">fdtable</span> &#123;</span></span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">int</span> max_fds;</span><br><span class="line">	<span class="class"><span class="keyword">struct</span> <span class="title">file</span> __<span class="title">rcu</span> **<span class="title">fd</span>;</span></span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *close_on_exec;</span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *open_fds;</span><br><span class="line">	<span class="keyword">unsigned</span> <span class="keyword">long</span> *full_fds_bits;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
 
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">1)max_fds:</span><br><span class="line">	当前允许分配fd的最大值</span><br><span class="line">2)fd:</span><br><span class="line">	内核空间用struct file来描述一个文件对象,用户空间用fd(file descriptor)表示一个文件对象.</span><br><span class="line">fd实际上是一个数组,它维护着所有打开的文件信息,其数组成员(struct file)用于内核空间操作文件,对应的数组下标用于用户空间操作文件,可避免数据直接暴露给用户空间.</span><br><span class="line">3)close_on_exec:</span><br><span class="line">	记录每个已打开文件close_on_exec的情况,一位表示一个已打开文件的close_on_exec信息.</span><br><span class="line">close_on_exec表示在调用系统调用execve()时需要关闭此文件.</span><br><span class="line">4)open_fds:</span><br><span class="line">	记录已打开(已使用)的fd情况,每一位表示一个fd的使用情况,1:表示已使用 0:表示未使用.</span><br><span class="line">5)full_fds_bits:</span><br><span class="line">	每一位表示连续BITS_PER_BYTE个fd的使用情况,1:表示全使用 0:表示未全使用.</span><br></pre></td></tr></table></figure>
-
+<p>1)max_fds:<br>&ensp;&ensp;当前允许分配fd的最大值<br>2)fd:<br>&ensp;&ensp;内核空间用struct file来描述一个文件对象,用户空间用fd(file descriptor)表示一个文件对象.<br>fd实际上是一个数组,它维护着所有打开的文件信息,其数组成员(struct file)用于内核空间操作文件,对应的数组下标用于用户空间操作文件,可避免数据直接暴露给用户空间.<br>3)close_on_exec:<br>&ensp;&ensp;记录每个已打开文件close_on_exec的情况,一位表示一个已打开文件的close_on_exec信息.<br>close_on_exec表示在调用系统调用execve()时需要关闭此文件.<br>4)open_fds:<br>&ensp;&ensp;记录已打开(已使用)的fd情况,每一位表示一个fd的使用情况,1:表示已使用 0:表示未使用.<br>5)full_fds_bits:<br>&ensp;&ensp;每一位表示连续BITS_PER_BYTE个fd的使用情况,1:表示全使用 0:表示未全使用.</p>
 <h1 id="四、文件描述符表分配策略"><a href="#四、文件描述符表分配策略" class="headerlink" title="四、文件描述符表分配策略"></a>四、文件描述符表分配策略</h1><p>&ensp;&ensp;&ensp;&ensp;在系统中资源是有限的,所以一个进程中可打开的文件数量是有限制的,可以通过/proc/$pid/limits查看Max open files限制.虽然规定了进程可打开文件数量的上限,但这并不意味着进程会用完所有的文件描述,若一开始时就分配所有的资源,这无疑是一种浪费.<br>因此内核空间对于fdtable的分配采取默认与动态分配两种策略:<br>&ensp;&ensp;默认策略就是当进程开始创建时,分配一个固定数量的文件描述所需的资源,此数量为BITS_PER_LONG.<br>&ensp;&ensp;动态分配就是当已打开的文件描述数量超出现有可分配最大数量时重新分配所需资源.每次以2的n次方的1024B/sizeof(struct file *)来递增扩充fd的容量,完成旧数据迁移后释放掉旧数据占用的内存(默认的fdtable除外).</p>
 <h1 id="五、文件描述符分配管理"><a href="#五、文件描述符分配管理" class="headerlink" title="五、文件描述符分配管理"></a>五、文件描述符分配管理</h1><p>&ensp;&ensp;&ensp;&ensp;fdtable使用fd数组记录分配的文件对象,用open_fds数组成员的每一bit表示相应下标fd数组成员的分配状况.如数组成员open_fds[i],其类型为unsigned long.那么open_fds[i]的第j位表示fd数组成员fd[i*BITS_PER_LONG+j]分配状况,bit 0表示未分配,1表示已分配.<br>&ensp;&ensp;用full_fds_bits数组成员的每1 bit表示相应下标open_fds数组成员的分配状况.如数组成员full_fds_bits[i],其类型为unsigned long,那么full_fds_bits[i]的第j位表示open_fds[i*BITS_PER_LONG+j]的分配状况.1表示其全部分配完,即open_fds[i*BITS_PER_LONG+j]的每1bit都为1,bit 0表示未全使用,即不全为1的情况.<br>之所示这样分级设计是为了加速查找速度.就如我们在中国地图上查找某一个县,我们先是确定省份,再确定市最后确定县一样.通过逐步的缩小查找范围,最后找到符合要求的.<br>所以查找未使用的fd的步骤如下:<br>&ensp;&ensp;1)在给定范围内[start,max]查找full_fds_bits数组[start/BITS_PER_LONG,max/BITS_PER_LONG]范围内中第一个为0的bit.<br>&ensp;&ensp;2)查找对应的open_fds数组成员中第一个为0的bit.<br>内核中查找未使用的bit的函数为find_next_zero_bit.若start=0的话,那么按照以上的查找步骤即使有相应的bit被置1,也还是要比较一次,这样的比较是没有必要的.因此内核在struct files_struct增加了next_fd成员,记录下一次开始查找的位置.<br>next_fd值更改有以下两种情况:<br>1)每次成功找到一个可用fd,next_fd等于此可用fd+1(next_fd=fd+1).<br>2)每次关闭一个文件,若此closed fd小于next_fd,next_fd等于closed fd(next_fd=fd).这样可以很快的复用关闭的fd.整个文件描述符相关的结构如下图:<br>                                                            <img src="/2020/06/04/fs-filetable/fs_fdtab.png" class></p>
 
@@ -219,7 +218,10 @@
     <a href="/2020/05/08/v4l2-media/" rel="prev" title="v4l2_media(v1.0)">
       <i class="fa fa-chevron-left"></i> v4l2_media(v1.0)
     </a></div>
-      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/2020/06/22/memblock-framework/" rel="next" title="memblock-framework(v0.1)">
+      memblock-framework(v0.1) <i class="fa fa-chevron-right"></i>
+    </a></div>
     </div>
       </footer>
     
@@ -292,7 +294,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-count">8</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
